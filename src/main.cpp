@@ -164,8 +164,12 @@ LRESULT CALLBACK WindowProc(
 
     case WM_TIMER:
       UpdateCaptureArea();
-      CaptureAndDrawBitmap(hwnd, g_captureX, g_captureY, g_captureWidth,
-                              g_captureHeight);
+      if (g_captureHeight > 0 && g_captureWidth > 0){
+        CaptureAndDrawBitmap(
+          hwnd, g_captureX, g_captureY, 
+          g_captureWidth, g_captureHeight
+        );
+      }
       return 0;
 
     case WM_PAINT: {
@@ -244,6 +248,12 @@ void CaptureAndDrawBitmap(HWND hwnd, int x, int y, int w, int h) {
 
   if (img.rows != h || img.cols != w) {
     img.resize(h, w);
+    
+    RECT rect;
+    GetClientRect(hwnd, &rect);
+    rect.right = rect.left + w;
+    rect.bottom = rect.top + h;
+    SetWindowPos(hwnd, NULL, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOMOVE);
   }
 
   getBitmapBuffer(g_hBitmap, img);
