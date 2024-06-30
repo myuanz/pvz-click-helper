@@ -30,6 +30,7 @@ int g_captureX = 0;       // 截图起始X坐标
 int g_captureY = 0;       // 截图起始Y坐标
 int g_captureWidth = 666;   // 截图宽度
 int g_captureHeight = 888;  // 截图高度
+bool g_isDragging = false;
 
 HWND g_targetWindow = NULL;
 
@@ -94,6 +95,7 @@ void UpdateCaptureArea() {
 
     g_captureWidth = rect.right - rect.left;
     g_captureHeight = rect.bottom - rect.top;
+    fmt::print("Capture area: {} x {} at ({}, {})\n", g_captureWidth, g_captureHeight, g_captureX, g_captureY);
   }
 }
 
@@ -225,7 +227,7 @@ LRESULT CALLBACK WindowProc(
       PAINTSTRUCT ps;
       HDC hdc = BeginPaint(hwnd, &ps);
 
-      if (g_hBitmap) {
+      if (g_hBitmap && !g_isDragging) {
         HDC hdcMem = CreateCompatibleDC(hdc);
         HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, g_hBitmap);
 
@@ -254,6 +256,22 @@ LRESULT CALLBACK WindowProc(
       }
       PostQuitMessage(0);
       break;
+    case WM_ENTERSIZEMOVE:
+      // 开始拖动
+      g_isDragging = true;
+      // 通知系统不要绘制窗口内容
+      SendMessage(hwnd, WM_SETREDRAW, FALSE, 0);
+      return 0;
+
+    case WM_EXITSIZEMOVE:
+      // 结束拖动
+      g_isDragging = false;
+      // 恢复绘制
+      SendMessage(hwnd, WM_SETREDRAW, TRUE, 0);
+      // 强制重绘整个窗口
+      InvalidateRect(hwnd, NULL, TRUE);
+      UpdateWindow(hwnd);
+      return 0;
   }
 
   return DefWindowProc(hwnd, uMsg, wParam, lParam);
@@ -277,7 +295,7 @@ void getBitmapBuffer(HBITMAP hBitmap, ImageType& output_img) {
   HDC hdc = GetDC(NULL);
   GetDIBits(
     hdc, hBitmap, 0, height, 
-    output_img.data, (BITMAPINFO*)&bi, DIB_RGB_COLORS
+    output_img.data.get(), (BITMAPINFO*)&bi, DIB_RGB_COLORS
   );
   ReleaseDC(NULL, hdc);
 }
@@ -329,9 +347,7 @@ void CaptureAndDrawBitmap(HWND hwnd, int x, int y, int w, int h) {
   int window_size = 5;
   int i = 0;
   for (; i + window_size <= peaks.size(); ++i) {
-    auto window =
-        std::vector<int>(peaks.begin() + i, peaks.begin() + i + window_size);
-
+    auto window = std::vector<int>(peaks.begin() + i, peaks.begin() + i + window_size);
     auto delta = std::vector<int>(window_size - 1, 0);
     std::transform(
       window.begin() + 1, window.end(), window.begin(),
@@ -353,11 +369,43 @@ void CaptureAndDrawBitmap(HWND hwnd, int x, int y, int w, int h) {
   }
   peaks.erase(peaks.begin(), peaks.begin() + i);
 
+  int card_top = 8;
+  int card_width = 50;
+  int card_height = 70;
+  Gdiplus::Graphics graphics(hdcMemDC);
+
   for (const auto peak : peaks) {
-    Gdiplus::Graphics graphics(hdcMemDC);
-    graphics.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-    Gdiplus::Pen pen(Gdiplus::Color(128, 255, 0, 0), 1);
-    graphics.DrawLine(&pen, peak, 0, peak, h);
+    int x = peak - card_width;
+    int y = 0 + card_top;
+    Card card(&img, x, y, card_width, card_height);
+    auto enable = card.count();
+
+
+    auto fill_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, rand() % 255, rand() % 255, peak % 255));
+    // graphics.FillRectangle(fill_brush, peak-card_width, 0+card_top, card_width, card_height);
+
+    if(enable) {
+      fill_brush->SetColor(Gdiplus::Color(255, 0, 255, 0));
+    } else {
+      fill_brush->SetColor(Gdiplus::Color(255, 255, 0, 0));
+    }
+    graphics.FillRectangle(fill_brush, peak-card_width, 0+card_top+card_height, card_width, 30);
+    
+    DeleteObject(fill_brush);
+    delete fill_brush;
+
+    // if (enable) {
+    //   Gdiplus::Font font(L"Arial", 12);
+    //   Gdiplus::SolidBrush brush(Gdiplus::Color(255, 255, 255, 255));
+    //   Gdiplus::PointF pointF(peak-card_width, 0+card_top+card_height);
+    //   graphics.DrawString(L"ENABLE", -1, &font, pointF, &brush);
+    // } else {
+    //   Gdiplus::Font font(L"Arial", 12);
+    //   Gdiplus::SolidBrush brush(Gdiplus::Color(255, 255, 255, 255));
+    //   Gdiplus::PointF pointF(peak-card_width, 0+card_top);
+    //   graphics.DrawString(L"DISABLE", -1, &font, pointF, &brush);
+    // }
+    // Release the graphics resources
   }
 
   SelectObject(hdcMemDC, hbmOld);
