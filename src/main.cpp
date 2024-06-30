@@ -1,4 +1,6 @@
-﻿#include <windows.h>
+﻿#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
+#include <windows.h>
 #include <objidl.h>
 #include <gdiplus.h>
 #include <tlhelp32.h>
@@ -15,7 +17,9 @@
 
 #include "image_type.h"
 #include "ctl_id.h"
+#include <commctrl.h>
 
+#pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "Gdiplus.lib")
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -93,9 +97,44 @@ void UpdateCaptureArea() {
   }
 }
 
+void CreateControl(HWND hwnd) {
+  // auto hButton = CreateWindow(
+  //   L"BUTTON",  // Predefined class; Unicode assumed 
+  //   L"点我",      // Button text 
+  //   WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,  // Styles 
+  //   10,         // x position 
+  //   10,         // y position 
+  //   100,        // Button width
+  //   30,         // Button height
+  //   hwnd,       // Parent window
+  //   (HMENU)ID_BUTTON,
+  //   (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE),
+  //   NULL
+  // );
+  // CreateWindow(
+  //   L"BUTTON",  // 预定义的按钮类（复选框也是按钮的一种）
+  //   L"选项",    // 复选框文本
+  //   WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX,  // 样式
+  //   10,         // x 位置
+  //   50,         // y 位置
+  //   100,        // 宽度
+  //   30,         // 高度
+  //   hwnd,       // 父窗口句柄
+  //   (HMENU)ID_CHECKBOX, // 控件 ID
+  //   (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE),
+  //   NULL
+  // );      // 指向额外数据的指针
+
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nCmdShow) {
   InitConsole();
+  INITCOMMONCONTROLSEX icex;
+  icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+  icex.dwICC = ICC_WIN95_CLASSES;
+  InitCommonControlsEx(&icex);
+
   Gdiplus::GdiplusStartupInput gdiplusStartupInput;
   ULONG_PTR gdiplusToken;
 
@@ -104,16 +143,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   const auto CLASS_NAME = L"PVZ-helper";
 
   WNDCLASS wc = {
+    .style = CS_HREDRAW | CS_VREDRAW,
     .lpfnWndProc = WindowProc,
     .hInstance = hInstance,
     .lpszClassName = CLASS_NAME,
   };
-
+  wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
+  wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
   RegisterClass(&wc);
 
-  HWND hwnd = CreateWindowEx(0, CLASS_NAME, CLASS_NAME,
-                             WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-                             600, 600, NULL, NULL, hInstance, NULL);
+  HWND hwnd = CreateWindowEx(
+    0, CLASS_NAME, CLASS_NAME, WS_OVERLAPPEDWINDOW, 
+    CW_USEDEFAULT, CW_USEDEFAULT, 
+    500, 500, 
+    NULL, NULL, hInstance, NULL
+  );
 
   if (hwnd == NULL) {
     MessageBox(NULL, L"窗口创建失败", L"错误", MB_OK | MB_ICONERROR);
@@ -136,7 +180,7 @@ LRESULT CALLBACK WindowProc(
   LPARAM lParam
 ) {
   switch (uMsg) {
-    case WM_CREATE:
+    case WM_CREATE: {
       SetTimer(hwnd, 1, 100, NULL);
 
       g_targetWindow = FindProcessWindow(L"PlantsVsZombies.exe");
@@ -160,8 +204,13 @@ LRESULT CALLBACK WindowProc(
         );
         exit(1);
       }
-      return 0;
-
+      CreateControl(hwnd);
+      HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+      EnumChildWindows(hwnd, [](HWND hwnd, LPARAM lParam) -> BOOL {
+        SendMessage(hwnd, WM_SETFONT, lParam, TRUE);
+        return TRUE;
+      }, (LPARAM)hFont);
+    }
     case WM_TIMER:
       UpdateCaptureArea();
       if (g_captureHeight > 0 && g_captureWidth > 0){
