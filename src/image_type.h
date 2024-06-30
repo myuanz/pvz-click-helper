@@ -99,6 +99,11 @@ public:
     int width;
     int height;
 
+    Card() {
+        raw_img = nullptr;
+        start_x = start_y = width = height = 0;
+    }
+
     Card(ImageType *raw_img, int start_x, int start_y, int width, int height) {
         this->raw_img = raw_img;
         this->start_x = start_x;
