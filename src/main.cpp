@@ -32,6 +32,9 @@ int g_captureWidth = 666;   // 截图宽度
 int g_captureHeight = 888;  // 截图高度
 bool g_isDragging = false;
 
+auto g_enable_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, 0, 255, 0));
+auto g_disable_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, 255, 0, 0));
+
 HWND g_targetWindow = NULL;
 
 ImageType img = ImageType(0, 0);
@@ -373,39 +376,18 @@ void CaptureAndDrawBitmap(HWND hwnd, int x, int y, int w, int h) {
   int card_width = 50;
   int card_height = 70;
   Gdiplus::Graphics graphics(hdcMemDC);
+  Card card;
 
   for (const auto peak : peaks) {
     int x = peak - card_width;
     int y = 0 + card_top;
-    Card card(&img, x, y, card_width, card_height);
+    card = Card(&img, x, y, card_width, card_height);
     auto enable = card.count();
 
-
-    auto fill_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, rand() % 255, rand() % 255, peak % 255));
-    // graphics.FillRectangle(fill_brush, peak-card_width, 0+card_top, card_width, card_height);
-
-    if(enable) {
-      fill_brush->SetColor(Gdiplus::Color(255, 0, 255, 0));
-    } else {
-      fill_brush->SetColor(Gdiplus::Color(255, 255, 0, 0));
-    }
-    graphics.FillRectangle(fill_brush, peak-card_width, 0+card_top+card_height, card_width, 30);
-    
-    DeleteObject(fill_brush);
-    delete fill_brush;
-
-    // if (enable) {
-    //   Gdiplus::Font font(L"Arial", 12);
-    //   Gdiplus::SolidBrush brush(Gdiplus::Color(255, 255, 255, 255));
-    //   Gdiplus::PointF pointF(peak-card_width, 0+card_top+card_height);
-    //   graphics.DrawString(L"ENABLE", -1, &font, pointF, &brush);
-    // } else {
-    //   Gdiplus::Font font(L"Arial", 12);
-    //   Gdiplus::SolidBrush brush(Gdiplus::Color(255, 255, 255, 255));
-    //   Gdiplus::PointF pointF(peak-card_width, 0+card_top);
-    //   graphics.DrawString(L"DISABLE", -1, &font, pointF, &brush);
-    // }
-    // Release the graphics resources
+    graphics.FillRectangle(
+      enable ? g_enable_brush : g_disable_brush, 
+      peak-card_width, 0+card_top+card_height, card_width, 30
+    );
   }
 
   SelectObject(hdcMemDC, hbmOld);
