@@ -187,27 +187,18 @@ LRESULT CALLBACK WindowProc(
 ) {
   switch (uMsg) {
     case WM_CREATE: {
-      g_targetWindow = FindProcessWindow(L"PlantsVsZombies.exe");
-      if (g_targetWindow) {
-        UpdateCaptureArea();
-        SetTimer(hwnd, ID_SNAPSHOT_TIMER, 100, NULL);
-        if (!RegisterHotKey(
-          hwnd, ID_HOT_KEY, MOD_CONTROL | MOD_ALT, 'G'
-        )) {
-          // std::cout << "热键注册失败" << std::endl;
-          MessageBox(
-            hwnd, L"热键注册失败", L"错误", MB_OK | MB_ICONERROR
-          );
-          return 1;
-        }
+      SetTimer(hwnd, ID_FINDWINDOW_TIMER, 1000, NULL);
+    
+        // if (!RegisterHotKey(
+        //   hwnd, ID_HOT_KEY, MOD_CONTROL | MOD_ALT, 'G'
+        // )) {
+        //   // std::cout << "热键注册失败" << std::endl;
+        //   MessageBox(
+        //     hwnd, L"热键注册失败", L"错误", MB_OK | MB_ICONERROR
+        //   );
+        //   return 1;
+        // }
 
-      } else {
-        MessageBox(
-          hwnd, L"无法找到 PlantsVsZombies.exe 窗口", L"错误",
-          MB_OK | MB_ICONERROR
-        );
-        exit(1);
-      }
       CreateControl(hwnd);
       HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
       EnumChildWindows(hwnd, [](HWND hwnd, LPARAM lParam) -> BOOL {
@@ -216,13 +207,29 @@ LRESULT CALLBACK WindowProc(
       }, (LPARAM)hFont);
     }
     case WM_TIMER:
-      UpdateCaptureArea();
-      if (g_captureHeight > 0 && g_captureWidth > 0){
-        CaptureAndDrawBitmap(
-          hwnd
-        );
+      if (g_targetWindow && wParam == ID_SNAPSHOT_TIMER) {
+        UpdateCaptureArea();
+        if (g_captureHeight > 0 && g_captureWidth > 0) {
+          CaptureAndDrawBitmap(hwnd);
+        }
+      } else if (wParam == ID_FINDWINDOW_TIMER) {
+        g_targetWindow = FindProcessWindow(L"PlantsVsZombies.exe");
+        if (g_targetWindow) {
+          SetTimer(hwnd, ID_SNAPSHOT_TIMER, 100, NULL);
+          UpdateCaptureArea();
+          wchar_t title[256];
+          wsprintf(title, L"[%p] PVZ 点击助手", g_targetWindow);
+          SetWindowText(hwnd, title);
+          SetTimer(hwnd, ID_FINDWINDOW_TIMER, 10000, NULL);
+        } else {
+          static int find_count = 0;
+          wchar_t title[256];
+          wsprintf(title, L"[%d] 未找到 PVZ 窗口", find_count++);
+          SetWindowText(hwnd, title);
+          SetTimer(hwnd, ID_FINDWINDOW_TIMER, 1000, NULL);
+        }
       }
-      return 0;
+      break;
 
     case WM_PAINT: {
       if (g_hBitmap && !g_isDragging && g_captureHeight > 0 && g_captureWidth > 0) {
@@ -247,9 +254,9 @@ LRESULT CALLBACK WindowProc(
     }
     case WM_HOTKEY:
       fmt::print("Hot key triggered {}\n", wParam);
-      if (wParam == ID_HOT_KEY) {
-        std::cout << "热键被触发！" << std::endl;
-      }
+      // if (wParam == ID_HOT_KEY) {
+      //   std::cout << "热键被触发！" << std::endl;
+      // }
       break;
     case WM_DESTROY:
       if (g_hBitmap) {
