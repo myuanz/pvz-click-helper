@@ -14,16 +14,16 @@
 #include <algorithm>
 #include <functional>
 #include <numeric>
+#include <commctrl.h>
 
 #include "image_type.h"
 #include "ctl_id.h"
-#include <commctrl.h>
 
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "Gdiplus.lib")
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-void CaptureAndDrawBitmap(HWND hwnd, int w, int h);
+void CaptureAndDrawBitmap(HWND hwnd);
 
 HBITMAP g_hBitmap = NULL;
 
@@ -95,7 +95,7 @@ void UpdateCaptureArea() {
     GetClientRect(g_targetWindow, &rect);
     g_captureWidth = rect.right - rect.left;
     g_captureHeight = rect.bottom - rect.top;
-    // fmt::print("Capture area: {} x {} at ({}, {})\n", g_captureWidth, g_captureHeight, g_captureX, g_captureY);
+    // fmt::print("Capture area: {} x {} @ {}\n", g_captureWidth, g_captureHeight, fmt::ptr(g_targetWindow));
   }
 }
 
@@ -219,31 +219,30 @@ LRESULT CALLBACK WindowProc(
       UpdateCaptureArea();
       if (g_captureHeight > 0 && g_captureWidth > 0){
         CaptureAndDrawBitmap(
-          hwnd,  
-          g_captureWidth, g_captureHeight
+          hwnd
         );
       }
       return 0;
 
     case WM_PAINT: {
-      PAINTSTRUCT ps;
-      HDC hdc = BeginPaint(hwnd, &ps);
+      if (g_hBitmap && !g_isDragging && g_captureHeight > 0 && g_captureWidth > 0) {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
 
-      if (g_hBitmap && !g_isDragging) {
         HDC hdcMem = CreateCompatibleDC(hdc);
         HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, g_hBitmap);
 
         SetStretchBltMode(hdc, HALFTONE);
         StretchBlt(
-          hdc, 0, 0, g_captureWidth, g_captureHeight, hdcMem, 0, 0,
-          g_captureWidth, g_captureHeight, SRCCOPY
+          hdc, 0, 0, g_captureWidth, g_captureHeight, 
+          hdcMem, 0, 0, g_captureWidth, g_captureHeight, SRCCOPY
         );
 
         SelectObject(hdcMem, hbmOld);
         DeleteDC(hdcMem);
+        EndPaint(hwnd, &ps);
       }
 
-      EndPaint(hwnd, &ps);
       break;
     }
     case WM_HOTKEY:
@@ -279,7 +278,7 @@ LRESULT CALLBACK WindowProc(
   return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-void getScaledBitmapBuffer(HDC hdc, HBITMAP hBitmap, ImageType& output_img) {
+HBITMAP getScaledBitmapBuffer(HDC hdc, HBITMAP hBitmap, ImageType& output_img) {
   BITMAP bmp;
   GetObject(hBitmap, sizeof(BITMAP), &bmp);
 
@@ -328,14 +327,16 @@ void getScaledBitmapBuffer(HDC hdc, HBITMAP hBitmap, ImageType& output_img) {
     );
     
     SelectObject(hdc, hBitmapResize);
-    DeleteObject(hBitmapResize);
+
     DeleteDC(hdcPartial);
     DeleteDC(hdcResize);
+    return hBitmapResize;
   } else {
     GetDIBits(
       hdc, hBitmap, 0, height, 
       output_img.data.get(), (BITMAPINFO*)&bi, DIB_RGB_COLORS
     );
+    return hBitmap;
   }
 }
 
@@ -352,20 +353,20 @@ HDC CapturePVZAndResize() {
   HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMemDC, g_hBitmap);
 
   PrintWindow(g_targetWindow, hdcMemDC, PW_CLIENTONLY);
-  getScaledBitmapBuffer(hdcMemDC, g_hBitmap, g_img);
+  g_hBitmap = getScaledBitmapBuffer(hdcMemDC, g_hBitmap, g_img);
   ReleaseDC(NULL, hdcScreen);
   return hdcMemDC;
 }
 
-void CaptureAndDrawBitmap(HWND hwnd, int w, int h) {
+void CaptureAndDrawBitmap(HWND hwnd) {
   HDC hdcMemDC = CapturePVZAndResize();
 
   // fmt::print("Image size: {} x {}\n", img.width(), img.height());
   RGBPix target_rgb = {110, 50, 19};
 
-  auto col_sum = std::vector<int>(w, 0);
-  for (int y = 0; y < h; ++y) {
-    for (int x = 0; x < w; ++x) {
+  auto col_sum = std::vector<int>(pvz_size.width, 0);
+  for (int y = 0; y < pvz_size.height; ++y) {
+    for (int x = 0; x < pvz_size.width; ++x) {
       if (target_rgb == g_img(x, y)) {
         col_sum[x]++;
         // fmt::print("eq {} {}\n", x, y);
@@ -420,7 +421,9 @@ void CaptureAndDrawBitmap(HWND hwnd, int w, int h) {
       peak-pvz_size.card_width, pvz_size.card_top+pvz_size.card_height-draw_h, 
       pvz_size.card_width, draw_h
     );
+    // fmt::print("{}", enable? "1" : "0");
   }
+  // fmt::print("\n");
 
   DeleteDC(hdcMemDC);
   InvalidateRect(hwnd, NULL, FALSE);
