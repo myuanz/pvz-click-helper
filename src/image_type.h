@@ -66,25 +66,7 @@ public:
 
     ImageType subimage(int x, int y, int w, int h) const {
         ImageType img(h, w);
-        // fmt::print(
-        //     "src img p: {:p}, length: {:x}, end: {:p}\n", 
-        //     fmt::ptr(data), rows * cols * 4, 
-        //     fmt::ptr(data + rows * cols * 4)
-        // );
-        // fmt::print(
-        //     "dst img p: {:p}, length: {:x}, end: {:p}\n", 
-        //     fmt::ptr(img.data), w * h * 4, 
-        //     fmt::ptr(img.data + w * h * 4)
-        // );
         for (int y_ = 0; y_ < h; y_++) {
-            // fmt::print(
-            //     "\twill copy: ({}, {}) -> ({}, {})\n",
-            //     fmt::ptr(data + (x + (y + y_) * cols) * 4),
-            //     fmt::ptr(data + (x + (y + y_) * cols) * 4 + w * 4),
-            //     fmt::ptr(img.data + y_ * w * 4),
-            //     fmt::ptr(img.data + y_ * w * 4 + w * 4)
-            // );
-                
             std::memcpy(img.data.get() + y_ * w * 4, data.get() + (x + (y + y_) * cols) * 4, w * 4);
         }
         return img;
@@ -141,7 +123,18 @@ private:
     int less_50;
     int more_200;
 };
-    
+struct PVZSize {
+    int width;
+    int height;
+    int card_width;
+    int card_height;
+    int card_top;
+};
+
+PVZSize pvz_size = {
+    880, 600, 50, 70, 8
+};
+
 /* 
 全屏模式下:
 总宽度: 2560(屏幕宽度)
