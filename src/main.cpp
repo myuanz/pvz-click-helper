@@ -32,8 +32,8 @@ int g_captureWidth = 666;   // 截图宽度
 int g_captureHeight = 888;  // 截图高度
 bool g_isDragging = false;
 
-auto g_enable_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, 0, 255, 0));
-auto g_disable_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, 255, 0, 0));
+Gdiplus::SolidBrush* g_enable_brush;
+Gdiplus::SolidBrush* g_disable_brush;
 
 HWND g_targetWindow = NULL;
 
@@ -98,7 +98,7 @@ void UpdateCaptureArea() {
 
     g_captureWidth = rect.right - rect.left;
     g_captureHeight = rect.bottom - rect.top;
-    fmt::print("Capture area: {} x {} at ({}, {})\n", g_captureWidth, g_captureHeight, g_captureX, g_captureY);
+    // fmt::print("Capture area: {} x {} at ({}, {})\n", g_captureWidth, g_captureHeight, g_captureX, g_captureY);
   }
 }
 
@@ -144,7 +144,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   ULONG_PTR gdiplusToken;
 
   Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
-
+  g_enable_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, 0, 255, 0));
+  g_disable_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, 255, 0, 0));
   const auto CLASS_NAME = L"PVZ-helper";
 
   WNDCLASS wc = {
@@ -319,11 +320,13 @@ void CaptureAndDrawBitmap(HWND hwnd, int x, int y, int w, int h) {
   if (img.rows != h || img.cols != w) {
     img.resize(h, w);
     
-    RECT rect;
-    GetClientRect(hwnd, &rect);
-    rect.right = rect.left + w;
-    rect.bottom = rect.top + h;
-    SetWindowPos(hwnd, NULL, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOMOVE);
+    RECT rect = {0, 0, w, h};
+    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+
+    int width = rect.right - rect.left;
+    int height = rect.bottom - rect.top;
+
+    SetWindowPos(hwnd, NULL, 0, 0, width, height, SWP_NOZORDER | SWP_NOMOVE);
   }
 
   getBitmapBuffer(g_hBitmap, img);
@@ -385,7 +388,8 @@ void CaptureAndDrawBitmap(HWND hwnd, int x, int y, int w, int h) {
     auto enable = card.count();
 
     graphics.FillRectangle(
-      enable ? g_enable_brush : g_disable_brush, 
+      // enable ? g_enable_brush : g_disable_brush, 
+      g_enable_brush, 
       peak-card_width, 0+card_top+card_height, card_width, 30
     );
   }
