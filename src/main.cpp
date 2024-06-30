@@ -39,6 +39,12 @@ HWND g_targetWindow = NULL;
 ImageType g_img = ImageType(pvz_size.height, pvz_size.width);
 auto g_screen_buffer = std::vector<uint8_t>();
 
+std::vector<int> card_border_peaks;
+const int MAX_CARD_COUNT = 14;
+
+static int g_snapshot_timer_event_id = 0;
+static int g_findwindow_timer_event_id = 0;
+
 VOID InitConsole() {
   if (AttachConsole(ATTACH_PARENT_PROCESS)) {
     freopen("CONOUT$", "w", stdout);
@@ -187,7 +193,7 @@ LRESULT CALLBACK WindowProc(
 ) {
   switch (uMsg) {
     case WM_CREATE: {
-      SetTimer(hwnd, ID_FINDWINDOW_TIMER, 1000, NULL);
+      g_findwindow_timer_event_id = SetTimer(hwnd, ID_FINDWINDOW_TIMER, 1000, NULL);
     
         // if (!RegisterHotKey(
         //   hwnd, ID_HOT_KEY, MOD_CONTROL | MOD_ALT, 'G'
@@ -215,18 +221,22 @@ LRESULT CALLBACK WindowProc(
       } else if (wParam == ID_FINDWINDOW_TIMER) {
         g_targetWindow = FindProcessWindow(L"PlantsVsZombies.exe");
         if (g_targetWindow) {
-          SetTimer(hwnd, ID_SNAPSHOT_TIMER, 100, NULL);
           UpdateCaptureArea();
           wchar_t title[256];
           wsprintf(title, L"[%p] PVZ 点击助手", g_targetWindow);
           SetWindowText(hwnd, title);
-          SetTimer(hwnd, ID_FINDWINDOW_TIMER, 10000, NULL);
+          if (g_snapshot_timer_event_id == 0) {
+            g_snapshot_timer_event_id = SetTimer(hwnd, ID_SNAPSHOT_TIMER, 100, NULL);
+            printf("Snapshot Timer started %d\n", g_snapshot_timer_event_id);
+          }
         } else {
           static int find_count = 0;
           wchar_t title[256];
           wsprintf(title, L"[%d] 未找到 PVZ 窗口", find_count++);
           SetWindowText(hwnd, title);
-          SetTimer(hwnd, ID_FINDWINDOW_TIMER, 1000, NULL);
+          KillTimer(hwnd, g_snapshot_timer_event_id);
+          printf("Snapshot Timer stopped %d\n", g_snapshot_timer_event_id);
+          g_snapshot_timer_event_id = 0;
         }
       }
       break;
@@ -365,10 +375,7 @@ HDC CapturePVZAndResize() {
   return hdcMemDC;
 }
 
-void CaptureAndDrawBitmap(HWND hwnd) {
-  HDC hdcMemDC = CapturePVZAndResize();
-
-  // fmt::print("Image size: {} x {}\n", img.width(), img.height());
+void FindCardBorder() {
   RGBPix target_rgb = {110, 50, 19};
 
   auto col_sum = std::vector<int>(pvz_size.width, 0);
@@ -376,22 +383,21 @@ void CaptureAndDrawBitmap(HWND hwnd) {
     for (int x = 0; x < pvz_size.width; ++x) {
       if (target_rgb == g_img(x, y)) {
         col_sum[x]++;
-        // fmt::print("eq {} {}\n", x, y);
       }
     }
   }
 
-  std::vector<int> peaks;
   for (int i = 1; i < col_sum.size() - 1; ++i) {
     if (col_sum[i] > 0 && col_sum[i] > col_sum[i - 1] &&
         col_sum[i] >= col_sum[i + 1]) {
-      peaks.push_back(i);
+      card_border_peaks.push_back(i);
     }
   }
+  
   int window_size = 5;
   int i = 0;
-  for (; i + window_size <= peaks.size(); ++i) {
-    auto window = std::vector<int>(peaks.begin() + i, peaks.begin() + i + window_size);
+  for (; i + window_size <= card_border_peaks.size(); ++i) {
+    auto window = std::vector<int>(card_border_peaks.begin() + i, card_border_peaks.begin() + i + window_size);
     auto delta = std::vector<int>(window_size - 1, 0);
     std::transform(
       window.begin() + 1, window.end(), window.begin(),
@@ -411,17 +417,30 @@ void CaptureAndDrawBitmap(HWND hwnd) {
       break;
     }
   }
-  peaks.erase(peaks.begin(), peaks.begin() + i);
+  card_border_peaks.erase(card_border_peaks.begin(), card_border_peaks.begin() + i);
+  if (card_border_peaks.size() > 0) {
+    fmt::print("Card border peaks: {}\n", fmt::join(card_border_peaks, ", "));
+  }
+}
+
+void CaptureAndDrawBitmap(HWND hwnd) {
+  HDC hdcMemDC = CapturePVZAndResize();
+
+  // fmt::print("Image size: {} x {}\n", img.width(), img.height());
+  if (MAX_CARD_COUNT != card_border_peaks.size()) {
+    card_border_peaks.clear();
+    FindCardBorder();
+  }
 
   Gdiplus::Graphics graphics(hdcMemDC);
   Card card;
 
-  for (const auto peak : peaks) {
+  for (const auto peak : card_border_peaks) {
     int x = peak - pvz_size.card_width;
     int y = pvz_size.card_top;
     card = Card(&g_img, x, y, pvz_size.card_width, pvz_size.card_height);
     auto enable = card.count();
-    // fmt::print("[{}] less_50: {}, more_200: {}, f: {}\n", peak, card.less_50, card.more_200, 1.0 * card.more_200 / card.less_50);
+    fmt::print("[{}] less_50: {}, more_200: {}, f: {}\n", peak, card.less_50, card.more_200, 1.0 * card.more_200 / card.less_50);
 
     auto draw_h = 15;
     graphics.FillRectangle(
@@ -431,7 +450,7 @@ void CaptureAndDrawBitmap(HWND hwnd) {
     );
     // fmt::print("{}", enable? "1" : "0");
   }
-  // fmt::print("\n");
+  fmt::print("\n");
 
   DeleteDC(hdcMemDC);
   InvalidateRect(hwnd, NULL, FALSE);
