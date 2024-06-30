@@ -19,6 +19,10 @@ struct RGBPix {
         // printf("r: (%d, %d) g: (%d, %d) b: (%d, %d)\n", r, other.r, g, other.g, b, other.b);
         return r == other.r && g == other.g && b == other.b;
     }
+
+    uint8_t find_max() const {
+        return r > g ? (r > b ? r : b) : (g > b ? g : b);
+    }
 };
 enum class Channel {
     R = 0,
@@ -81,6 +85,9 @@ public:
     int width;
     int height;
 
+    int less_50;
+    int more_200;
+
     Card() {
         raw_img = nullptr;
         start_x = start_y = width = height = 0;
@@ -92,6 +99,8 @@ public:
         this->start_y = start_y;
         this->width = width;
         this->height = height;
+
+        less_50 = more_200 = 0;
     }
 
     bool enable() {
@@ -100,28 +109,35 @@ public:
 
     bool count() {
         less_50 = more_200 = 0;
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-                for (int c = 0; c < 3; c++) {
-                    uint8_t p = raw_img->data[
-                        (start_x + j + (start_y + i) * raw_img->cols) * 4 + c
-                    ];
-                    if (p < 50) {
-                        less_50++;
-                    } else if (p > 200) {
-                        more_200++;
-                    }
+        for (int i = 0; i < height / 2; i++) {
+            for (int j = width/2; j < width; j++) {
+                // for (int c = 0; c < 3; c++) {
+                //     uint8_t p = raw_img->data[
+                //         (start_x + j + (start_y + i) * raw_img->cols) * 4 + c
+                //     ];
+                //     if (p < 50) {
+                //         less_50++;
+                //     } else if (p > 200) {
+                //         more_200++;
+                //     }
 
+                // }
+                auto pix = raw_img->operator()(start_x + j, start_y + i);
+                if (pix.r >= 253 && pix.g >= 236 && pix.b <= 50) {
+                    // 这是阳光
+                    continue;
+                }
+                auto max = pix.find_max();
+                if (max < 50) {
+                    less_50++;
+                } else if (max > 200) {
+                    more_200++;
                 }
             }
         }
-        // fmt::print("less_50: {}, more_200: {}, f: {}\n", less_50, more_200, 1.0 * more_200 / less_50);
         return enable();
     }
 
-private:
-    int less_50;
-    int more_200;
 };
 struct PVZSize {
     int width;

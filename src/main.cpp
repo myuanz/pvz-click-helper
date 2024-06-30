@@ -421,6 +421,7 @@ void CaptureAndDrawBitmap(HWND hwnd) {
     int y = pvz_size.card_top;
     card = Card(&g_img, x, y, pvz_size.card_width, pvz_size.card_height);
     auto enable = card.count();
+    // fmt::print("[{}] less_50: {}, more_200: {}, f: {}\n", peak, card.less_50, card.more_200, 1.0 * card.more_200 / card.less_50);
 
     auto draw_h = 15;
     graphics.FillRectangle(
