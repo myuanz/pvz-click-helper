@@ -10,3 +10,4 @@ build/
 
 *.png
 vsxmake2022
+!/docs/*.png
