@@ -7,7 +7,8 @@
 #include <tlhelp32.h>
 #include <psapi.h>
 #include <stdio.h>
-#include <fmt/format.h>
+// #include <fmt/format.h>
+#include <string>
 #include <vector>
 #include <cmath>
 #include <iostream>
@@ -57,6 +58,13 @@ static int g_findwindow_timer_event_id = 0;
 HHOOK g_hHook = NULL;
 
 VOID InitConsole() {
+  wchar_t username[256];
+  DWORD username_len = sizeof(username) / sizeof(username[0]);
+  GetUserNameW(username, &username_len);
+  if (wcscmp(username, L"myuan") != 0) {
+    return;
+  }
+
   if (AttachConsole(ATTACH_PARENT_PROCESS)) {
     freopen("CONOUT$", "w", stdout);
     freopen("CONOUT$", "w", stderr);
@@ -548,7 +556,7 @@ void FindCardBorder() {
   }
   card_border_peaks.erase(card_border_peaks.begin(), card_border_peaks.begin() + i);
   if (card_border_peaks.size() > 0) {
-    fmt::print("Card border peaks: {}\n", fmt::join(card_border_peaks, ", "));
+    // fmt::print("Card border peaks: {}\n", fmt::join(card_border_peaks, ", "));
   }
 }
 
