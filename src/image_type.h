@@ -1,10 +1,24 @@
 ﻿#pragma once
-#include <stdint.h>
-// #include <fmt/core.h>
-// #include <Eigen/Core>
+#define NOMINMAX 
 
-// const int 植物卡开始x = 1;
-// using ImageType = Eigen::Matrix<uint8_t, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+#include <stdint.h>
+
+struct HSVPix {
+    float h; // Hue, 范围 [0, 360)
+    float s; // Saturation, 范围 [0, 1]
+    float v; // Value, 范围 [0, 1]
+
+    HSVPix() : h(0), s(0), v(0) {}
+    HSVPix(float h, float s, float v) : h(h), s(s), v(v) {}
+
+    bool operator==(const HSVPix& other) const {
+        return h == other.h && s == other.s && v == other.v;
+    }
+
+    uint8_t find_max() const {
+        return std::max({h, s, v});
+    }
+};
 
 struct RGBPix {
     uint8_t b;
@@ -21,7 +35,41 @@ struct RGBPix {
     }
 
     uint8_t find_max() const {
-        return r > g ? (r > b ? r : b) : (g > b ? g : b);
+        return std::max({r, g, b});
+    }
+
+    HSVPix to_hsv() const {
+        HSVPix hsv;
+        float r_f = r / 255.0f;
+        float g_f = g / 255.0f;
+        float b_f = b / 255.0f;
+        
+        float c_max = std::max({r_f, g_f, b_f});
+        float c_min = std::min({r_f, g_f, b_f});
+        float diff = c_max - c_min;
+
+        // Calculate V
+        hsv.v = c_max;
+
+        // Calculate S
+        hsv.s = (c_max == 0) ? 0 : (diff / c_max);
+
+        // Calculate H
+        if (c_max == c_min) {
+            hsv.h = 0; // Undefined, set to 0
+        } else if (c_max == r_f) {
+            hsv.h = 60 * ((g_f - b_f) / diff);
+        } else if (c_max == g_f) {
+            hsv.h = 60 * (2 + (b_f - r_f) / diff);
+        } else { // c_max == b_f
+            hsv.h = 60 * (4 + (r_f - g_f) / diff);
+        }
+
+        if (hsv.h < 0) {
+            hsv.h += 360;
+        }
+
+        return hsv;
     }
 };
 enum class Channel {
@@ -87,6 +135,7 @@ public:
 
     int less_50;
     int more_200;
+    int sun_count;
 
     Card() {
         raw_img = nullptr;
@@ -100,7 +149,7 @@ public:
         this->width = width;
         this->height = height;
 
-        less_50 = more_200 = 0;
+        less_50 = more_200 = sun_count = 0;
     }
 
     bool enable() {
@@ -108,9 +157,9 @@ public:
     }
 
     bool count() {
-        less_50 = more_200 = 0;
-        for (int i = 0; i < height / 2; i++) {
-            for (int j = width/2; j < width; j++) {
+        less_50 = more_200 = sun_count = 0;
+        for (int i = 0; i < height; i++) {
+            for (int j = 0; j < width; j++) {
                 // for (int c = 0; c < 3; c++) {
                 //     uint8_t p = raw_img->data[
                 //         (start_x + j + (start_y + i) * raw_img->cols) * 4 + c
@@ -122,13 +171,15 @@ public:
                 //     }
 
                 // }
-                auto pix = raw_img->operator()(start_x + j, start_y + i);
-                if (pix.r >= 253 && pix.g >= 236 && pix.b <= 50) {
-                    // 这是阳光
+                auto rgb = raw_img->operator()(start_x + j, start_y + i);
+                auto hsv = rgb.to_hsv();
+
+                if (hsv.h >= 53 && hsv.h <= 60 && hsv.v > 0.7) {
+                    sun_count++;
                     continue;
                 }
-                auto max = pix.find_max();
-                if (max < 50) {
+                auto max = rgb.find_max();
+                if (max < 100) {
                     less_50++;
                 } else if (max > 200) {
                     more_200++;

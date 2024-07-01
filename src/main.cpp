@@ -1,4 +1,5 @@
 ﻿#pragma comment(linker,"\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#define NOMINMAX 
 
 #include <windows.h>
 #include <objidl.h>
@@ -23,7 +24,7 @@
 #pragma comment(lib, "Gdiplus.lib")
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
-void CaptureAndDrawBitmap(HWND hwnd);
+void CaptureAndSetStatus(HWND hwnd);
 
 HBITMAP g_hBitmap = NULL;
 
@@ -31,16 +32,20 @@ int g_captureWidth = 0;   // 截图宽度
 int g_captureHeight = 0;  // 截图高度
 bool g_isDragging = false;
 
-Gdiplus::SolidBrush* g_enable_brush;
-Gdiplus::SolidBrush* g_disable_brush;
+Gdiplus::SolidBrush* g_enable_background_brush;
+Gdiplus::SolidBrush* g_disable_background_brush;
+Gdiplus::SolidBrush* g_enable_string_brush;
+Gdiplus::SolidBrush* g_disable_string_brush;
+Gdiplus::Font* g_font;
 
 HWND g_targetWindow = NULL;
 
 ImageType g_img = ImageType(pvz_size.height, pvz_size.width);
 auto g_screen_buffer = std::vector<uint8_t>();
 
-std::vector<int> card_border_peaks;
 const int MAX_CARD_COUNT = 14;
+std::vector<int> card_border_peaks;
+std::vector<bool> card_enable;
 
 static int g_snapshot_timer_event_id = 0;
 static int g_findwindow_timer_event_id = 0;
@@ -135,6 +140,17 @@ void CreateControl(HWND hwnd) {
 
 }
 
+Gdiplus::Font* CreateDefaultFont() {
+    NONCLIENTMETRICS ncm;
+    ncm.cbSize = sizeof(NONCLIENTMETRICS);
+    SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0);
+
+    Gdiplus::FontFamily fontFamily(ncm.lfMessageFont.lfFaceName);
+    float emSize = abs(ncm.lfMessageFont.lfHeight);
+
+    return new Gdiplus::Font(&fontFamily, emSize, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
                    LPSTR lpCmdLine, int nCmdShow) {
   InitConsole();
@@ -147,8 +163,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   ULONG_PTR gdiplusToken;
 
   Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
-  g_enable_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, 0, 255, 0));
-  g_disable_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, 255, 0, 0));
+  g_enable_background_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, 0, 255, 0));
+  g_disable_background_brush = new Gdiplus::SolidBrush(Gdiplus::Color(128, 255, 0, 0));
+  g_enable_string_brush = new Gdiplus::SolidBrush(Gdiplus::Color(255, 255, 0, 255));
+  g_disable_string_brush = new Gdiplus::SolidBrush(Gdiplus::Color(255, 255, 255, 255));
+  g_font = CreateDefaultFont();
+
   const auto CLASS_NAME = L"PVZ-helper";
 
   WNDCLASS wc = {
@@ -216,7 +236,7 @@ LRESULT CALLBACK WindowProc(
       if (g_targetWindow && wParam == ID_SNAPSHOT_TIMER) {
         UpdateCaptureArea();
         if (g_captureHeight > 0 && g_captureWidth > 0) {
-          CaptureAndDrawBitmap(hwnd);
+          CaptureAndSetStatus(hwnd);
         }
       } else if (wParam == ID_FINDWINDOW_TIMER) {
         g_targetWindow = FindProcessWindow(L"PlantsVsZombies.exe");
@@ -248,6 +268,29 @@ LRESULT CALLBACK WindowProc(
 
         HDC hdcMem = CreateCompatibleDC(hdc);
         HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, g_hBitmap);
+        Gdiplus::Graphics graphics(hdcMem);
+
+        for(int i=0; i<card_border_peaks.size(); i++) {
+          auto background_brush = card_enable[i] ? g_enable_background_brush : g_disable_background_brush;
+          auto string_brush = card_enable[i] ? g_enable_string_brush : g_disable_string_brush;
+
+          auto draw_h = 15;
+          auto peak = card_border_peaks[i];
+          auto draw_string_p = Gdiplus::PointF(peak-pvz_size.card_width, pvz_size.card_top+pvz_size.card_height-draw_h);
+
+          graphics.FillRectangle(
+            background_brush, 
+            peak-pvz_size.card_width, pvz_size.card_top+pvz_size.card_height-draw_h, 
+            pvz_size.card_width, draw_h
+          );
+          graphics.DrawString(
+            std::to_wstring(i+1).c_str(), 
+            -1, 
+            g_font,
+            draw_string_p,
+            string_brush
+          );
+        }
 
         SetStretchBltMode(hdc, HALFTONE);
         StretchBlt(
@@ -423,7 +466,7 @@ void FindCardBorder() {
   }
 }
 
-void CaptureAndDrawBitmap(HWND hwnd) {
+void CaptureAndSetStatus(HWND hwnd) {
   HDC hdcMemDC = CapturePVZAndResize();
 
   // fmt::print("Image size: {} x {}\n", img.width(), img.height());
@@ -431,26 +474,35 @@ void CaptureAndDrawBitmap(HWND hwnd) {
     card_border_peaks.clear();
     FindCardBorder();
   }
+  card_enable.resize(card_border_peaks.size());
 
-  Gdiplus::Graphics graphics(hdcMemDC);
   Card card;
 
-  for (const auto peak : card_border_peaks) {
+  auto strings = std::vector<std::string>();
+  for (int i=0; const auto peak : card_border_peaks) {
     int x = peak - pvz_size.card_width;
     int y = pvz_size.card_top;
     card = Card(&g_img, x, y, pvz_size.card_width, pvz_size.card_height);
     auto enable = card.count();
-    fmt::print("[{}] less_50: {}, more_200: {}, f: {}\n", peak, card.less_50, card.more_200, 1.0 * card.more_200 / card.less_50);
+    if (
+      (1.0 * card.sun_count / (card.more_200 + 1) > 0.5) 
+      // || (1.0 * card.sun_count / (card.less_50 + 1) > 2)
+    ) {
+      // 阳光比例较高时, 设为不可用
+      enable = false;
+    }
+    card_enable[i] = enable;
 
-    auto draw_h = 15;
-    graphics.FillRectangle(
-      enable ? g_enable_brush : g_disable_brush, 
-      peak-pvz_size.card_width, pvz_size.card_top+pvz_size.card_height-draw_h, 
-      pvz_size.card_width, draw_h
-    );
-    // fmt::print("{}", enable? "1" : "0");
+    // fmt::print("[{}] less: {:03d}, more: {:03d}, f: {:.2f}, sun: {}\n", peak, card.less_50, card.more_200, 1.0 * card.more_200 / card.less_50, card.sun_count);
+    strings.push_back(fmt::format(
+      "[{:02d}|{}] less: {:03d}, more: {:03d}, f: {:.2f}, sun: {}\n", 
+      i+1, peak, card.less_50, card.more_200, 1.0 * card.more_200 / card.less_50, card.sun_count
+    ));
+
+    i++;
   }
-  fmt::print("\n");
+  // fmt::print("\n");
+  fmt::println("{}", fmt::join(strings, ""));
 
   DeleteDC(hdcMemDC);
   InvalidateRect(hwnd, NULL, FALSE);
