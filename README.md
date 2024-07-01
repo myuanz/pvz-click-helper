@@ -20,14 +20,6 @@ TODO:
 1. 在全屏模式截图. 我还没找到可在 WindowsXP 到 Windows 11 共用的全屏截图方案, 期待大佬的指点. 
 2. 在 Windows XP 和 Windows 7 测试程序可用性
 
-## 截图
-
-红色代表已识别的不可用卡片, 绿色代表识别的可用卡片
-
-![alt text](./docs/image1.png)
-![alt text](./docs/image2.png)
-
-
 ## 下载
 
 [Github](https://github.com/myuanz/pvz-click-helper/releases)
@@ -37,6 +29,14 @@ TODO:
 ```
 链接: https://pan.baidu.com/s/1RNppi0DVjdwQgPGc5NS8Xw?pwd=2333 提取码: 2333 复制这段内容后打开百度网盘手机App，操作更方便哦
 ```
+
+## 截图
+
+红色代表已识别的不可用卡片, 绿色代表识别的可用卡片
+
+![alt text](./docs/image1.png)
+![alt text](./docs/image2.png)
+
 
 ## 构建
 
