@@ -1,21 +1,23 @@
 add_rules("mode.debug", "mode.release")
 
 add_defines("_UNICODE", "UNICODE")
-add_requires("opencv", {configs = {
-    ["ffmpeg"] = false,
-    ["1394"] = false,
-    ["protobuf"] = false,
-    ["python"] = false,
-    ["webp"] = false,
-    ["tiff"] = false,
-    ["eigen"] = false,
-    ["jpeg"] = false,
-    ["opengl"] = false,
-}})
-add_requires("fmt", "eigen")
+-- add_requires("opencv", {configs = {
+--     ["ffmpeg"] = false,
+--     ["1394"] = false,
+--     ["protobuf"] = false,
+--     ["python"] = false,
+--     ["webp"] = false,
+--     ["tiff"] = false,
+--     ["eigen"] = false,
+--     ["jpeg"] = false,
+--     ["opengl"] = false,
+-- }})
+add_requires("fmt")
 set_languages("c17", "cxx20")
+set_runtimes("MT")
+set_arch("x86")
 -- set_toolchains("@cosmocc")
-target("pvz-helper")
+target("pvz-click-helper")
     set_kind("binary")
     add_files("src/*.cpp")
     add_headerfiles("src/*.h")
@@ -24,7 +26,7 @@ target("pvz-helper")
         "ole32", "oleaut32", "uuid", "comctl32", "imm32", "version", 
         "winmm", "ws2_32", "gdiplus"
     )
-    add_packages("opencv", "fmt", "eigen")
+    add_packages("fmt")
 --
 -- If you want to known more usage about xmake, please see https://xmake.io
 --
