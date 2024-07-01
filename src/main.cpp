@@ -30,6 +30,10 @@ HBITMAP g_hBitmap = NULL;
 
 int g_captureWidth = 0;   // 截图宽度
 int g_captureHeight = 0;  // 截图高度
+int g_captureLeft = 0;    // 截图左上角 x 坐标
+int g_captureTop = 0;     // 截图左上角 y 坐标
+int g_captureTitleBarHeight = 0;  // 窗口标题栏高度
+
 bool g_isDragging = false;
 
 Gdiplus::SolidBrush* g_enable_background_brush;
@@ -49,6 +53,8 @@ std::vector<bool> card_enable;
 
 static int g_snapshot_timer_event_id = 0;
 static int g_findwindow_timer_event_id = 0;
+
+HHOOK g_hHook = NULL;
 
 VOID InitConsole() {
   if (AttachConsole(ATTACH_PARENT_PROCESS)) {
@@ -106,6 +112,12 @@ void UpdateCaptureArea() {
     GetClientRect(g_targetWindow, &rect);
     g_captureWidth = rect.right - rect.left;
     g_captureHeight = rect.bottom - rect.top;
+
+    GetWindowRect(g_targetWindow, &rect);
+    g_captureLeft = rect.left;
+    g_captureTop = rect.top;
+    g_captureTitleBarHeight = GetSystemMetrics(SM_CYCAPTION);
+
     // fmt::print("Capture area: {} x {} @ {}\n", g_captureWidth, g_captureHeight, fmt::ptr(g_targetWindow));
   }
 }
@@ -140,6 +152,83 @@ void CreateControl(HWND hwnd) {
 
 }
 
+void MoveClickAndBack(int x, int y) {
+  HWND hwnd = GetForegroundWindow();
+  if (hwnd != g_targetWindow) {
+    return;
+  }
+
+  POINT startPos;
+  GetCursorPos(&startPos);
+  // fmt::print("Start position: ({}, {})\n", startPos.x, startPos.y);
+  // fmt::print("Click position: ({}, {})\n", x, y);
+
+  SetCursorPos(x, y);
+  Sleep(10);
+  mouse_event(MOUSEEVENTF_LEFTDOWN, x, y, 0, 0);
+  mouse_event(MOUSEEVENTF_LEFTUP, x, y, 0, 0);
+  Sleep(10);
+  SetCursorPos(startPos.x, startPos.y);
+  Sleep(10);
+  mouse_event(MOUSEEVENTF_LEFTDOWN, x, y, 0, 0);
+  mouse_event(MOUSEEVENTF_LEFTUP, x, y, 0, 0);
+}
+
+void PlantingCard(int card_index) {
+  if (card_index < 0 || card_index >= card_border_peaks.size()) {
+    return;
+  }
+  int x = card_border_peaks[card_index] + pvz_size.card_width / 2;
+  int y = g_captureTop + pvz_size.card_height / 2 + pvz_size.card_top;
+  MoveClickAndBack(x, y);
+}
+
+void OnKey(DWORD vkCode) {
+  int toPlant = -1;
+
+  if (vkCode == ID_ZHONGZHI_HOTKEY) {
+    for (int i = 0; i < card_enable.size(); i++) {
+      if (card_enable[i]) {
+        toPlant = i;
+        break;
+      }
+    }
+  } else if (vkCode == ID_CHANCHU_HOTKEY) {
+    MoveClickAndBack(
+      g_captureLeft + pvz_size.width - pvz_size.card_width / 2,
+      g_captureTop + pvz_size.card_top + pvz_size.card_height / 2
+    );
+  } else if (vkCode >= ID_SEQ_HOTKEYS[0] && vkCode <= ID_SEQ_HOTKEYS[ID_SEQ_HOTKEYS.size()-3]) {
+    toPlant = vkCode - ID_SEQ_HOTKEYS[0];
+  } else if (vkCode == ID_SEQ_HOTKEYS[ID_SEQ_HOTKEYS.size()-2]) {
+    toPlant = 12;
+  } else if (vkCode == ID_SEQ_HOTKEYS[ID_SEQ_HOTKEYS.size()-1]) {
+    toPlant = 13;
+  }
+  if (toPlant >= 0) {
+    PlantingCard(toPlant);
+    // fmt::print("Planting card: {}\n", toPlant);
+  }
+  // fmt::print("Key pressed: {}\n", vkCode);
+}
+
+LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+  if (nCode == HC_ACTION) {
+    if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
+      KBDLLHOOKSTRUCT* pKbdStruct = (KBDLLHOOKSTRUCT*)lParam;
+      OnKey(pKbdStruct->vkCode);
+    }
+  }
+  return CallNextHookEx(g_hHook, nCode, wParam, lParam);
+}
+void RegisterHotKeys(HWND hwnd) {
+  for (int i = 0; i < ID_SEQ_HOTKEYS.size(); i++) {
+    RegisterHotKey(hwnd, ID_SEQ_HOTKEYS[i], NULL, ID_SEQ_HOTKEYS[i]);
+  }
+  RegisterHotKey(hwnd, ID_CHANCHU_HOTKEY, MOD_CONTROL, ID_CHANCHU_HOTKEY);
+  RegisterHotKey(hwnd, ID_ZHONGZHI_HOTKEY, MOD_CONTROL, ID_ZHONGZHI_HOTKEY);
+}
+
 Gdiplus::Font* CreateDefaultFont() {
     NONCLIENTMETRICS ncm;
     ncm.cbSize = sizeof(NONCLIENTMETRICS);
@@ -151,9 +240,16 @@ Gdiplus::Font* CreateDefaultFont() {
     return new Gdiplus::Font(&fontFamily, emSize, Gdiplus::FontStyleRegular, Gdiplus::UnitPixel);
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-                   LPSTR lpCmdLine, int nCmdShow) {
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
   InitConsole();
+  g_hHook = SetWindowsHookEx(
+    WH_KEYBOARD_LL, KeyboardProc, GetModuleHandle(NULL), 0
+  );
+  if (g_hHook == NULL) {
+    MessageBox(NULL, L"无法初始化非独占的键盘热键, 一般是由于杀毒软件阻止. \n接下来将使用独占热键, 以下按键将由本程序占用:\n\tF1、F2、...、F12、减号键、加号键、C、Z\n\n如欲恢复关闭本程序即可", L"注册热键错误", MB_ICONERROR);
+    return 1;
+  }
+
   INITCOMMONCONTROLSEX icex;
   icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
   icex.dwICC = ICC_WIN95_CLASSES;
@@ -214,16 +310,9 @@ LRESULT CALLBACK WindowProc(
   switch (uMsg) {
     case WM_CREATE: {
       g_findwindow_timer_event_id = SetTimer(hwnd, ID_FINDWINDOW_TIMER, 1000, NULL);
-    
-        // if (!RegisterHotKey(
-        //   hwnd, ID_HOT_KEY, MOD_CONTROL | MOD_ALT, 'G'
-        // )) {
-        //   // std::cout << "热键注册失败" << std::endl;
-        //   MessageBox(
-        //     hwnd, L"热键注册失败", L"错误", MB_OK | MB_ICONERROR
-        //   );
-        //   return 1;
-        // }
+      if (g_hHook == NULL) {
+        RegisterHotKeys(hwnd);
+      }
 
       CreateControl(hwnd);
       HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
@@ -306,10 +395,7 @@ LRESULT CALLBACK WindowProc(
       break;
     }
     case WM_HOTKEY:
-      fmt::print("Hot key triggered {}\n", wParam);
-      // if (wParam == ID_HOT_KEY) {
-      //   std::cout << "热键被触发！" << std::endl;
-      // }
+      OnKey(wParam);
       break;
     case WM_DESTROY:
       if (g_hBitmap) {
@@ -494,15 +580,15 @@ void CaptureAndSetStatus(HWND hwnd) {
     card_enable[i] = enable;
 
     // fmt::print("[{}] less: {:03d}, more: {:03d}, f: {:.2f}, sun: {}\n", peak, card.less_50, card.more_200, 1.0 * card.more_200 / card.less_50, card.sun_count);
-    strings.push_back(fmt::format(
-      "[{:02d}|{}] less: {:03d}, more: {:03d}, f: {:.2f}, sun: {}\n", 
-      i+1, peak, card.less_50, card.more_200, 1.0 * card.more_200 / card.less_50, card.sun_count
-    ));
+    // strings.push_back(fmt::format(
+    //   "[{:02d}|{}] less: {:03d}, more: {:03d}, f: {:.2f}, sun: {}\n", 
+    //   i+1, peak, card.less_50, card.more_200, 1.0 * card.more_200 / card.less_50, card.sun_count
+    // ));
 
     i++;
   }
   // fmt::print("\n");
-  fmt::println("{}", fmt::join(strings, ""));
+  // fmt::println("{}", fmt::join(strings, ""));
 
   DeleteDC(hdcMemDC);
   InvalidateRect(hwnd, NULL, FALSE);
